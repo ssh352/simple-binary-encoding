@@ -63,7 +63,7 @@ class SubGroup implements RustGenerator.ParentDef
         final PrimitiveType numInGroupPrimitiveType = numInGroupToken.encoding().primitiveType();
 
         // define struct...
-        indent(sb, level - 1, "#[derive(Debug, Default)]\n");
+        indent(sb, level - 1, "#[derive(Debug)]\n");
         indent(sb, level - 1, "pub struct %s<P> {\n", name);
         indent(sb, level, "parent: Option<P>,\n");
         indent(sb, level, "count: %s,\n", rustTypeName(numInGroupPrimitiveType));
@@ -72,11 +72,24 @@ class SubGroup implements RustGenerator.ParentDef
         indent(sb, level, "initial_limit: usize,\n");
         indent(sb, level - 1, "}\n\n");
 
+        indent(sb, level - 1, "impl<P> Default for %s<P> {\n", name);
+        indent(sb, level, "#[inline]\n");
+        indent(sb, level, "fn default() -> Self {\n");
+        indent(sb, level + 1, "Self {\n");
+        indent(sb, level + 2, "parent: None,\n");
+        indent(sb, level + 2, "count: 0,\n");
+        indent(sb, level + 2, "index: 0,\n");
+        indent(sb, level + 2, "offset: 0,\n");
+        indent(sb, level + 2, "initial_limit: 0,\n");
+        indent(sb, level + 1, "}\n");
+        indent(sb, level, "}\n");
+        indent(sb, level - 1, "}\n\n");
+
         final RustGenerator.NullifyTargets nullifyTargets = RustGenerator.getNullifyTargets(fields);
         RustGenerator.appendImplEncoderForComposite(sb, level - 1, name, nullifyTargets);
 
         // define impl...
-        indent(sb, level - 1, "impl<'a, P> %s<P> where P: Encoder<'a> + Default {\n", name);
+        indent(sb, level - 1, "impl<P> %s<P> where P: Encoder {\n", name);
 
         final int dimensionHeaderSize = tokens.get(index).encodedLength();
 
@@ -89,9 +102,9 @@ class SubGroup implements RustGenerator.ParentDef
         indent(sb, level, ") -> Self {\n");
         indent(sb, level + 1, "let initial_limit = parent.get_limit();\n");
         indent(sb, level + 1, "parent.set_limit(initial_limit + %d);\n", dimensionHeaderSize);
-        indent(sb, level + 1, "parent.get_buf_mut().put_%s_at(initial_limit, Self::block_length());\n",
+        indent(sb, level + 1, "put_%s_at(parent.get_buf_mut(), initial_limit, Self::block_length());\n",
             rustTypeName(blockLengthPrimitiveType));
-        indent(sb, level + 1, "parent.get_buf_mut().put_%s_at(initial_limit + %d, count);\n",
+        indent(sb, level + 1, "put_%s_at(parent.get_buf_mut(), initial_limit + %d, count);\n",
             rustTypeName(numInGroupPrimitiveType), numInGroupToken.offset());
 
         indent(sb, level + 1, "self.parent = Some(parent);\n");
@@ -155,7 +168,7 @@ class SubGroup implements RustGenerator.ParentDef
         final PrimitiveType numInGroupPrimitiveType = numInGroupToken.encoding().primitiveType();
 
         // define struct...
-        indent(sb, level - 1, "#[derive(Debug, Default)]\n");
+        indent(sb, level - 1, "#[derive(Debug)]\n");
         indent(sb, level - 1, "pub struct %s<P> {\n", name);
         indent(sb, level, "parent: Option<P>,\n");
         indent(sb, level, "block_length: %s,\n", rustTypeName(blockLengthPrimitiveType));
@@ -164,11 +177,24 @@ class SubGroup implements RustGenerator.ParentDef
         indent(sb, level, "offset: usize,\n");
         indent(sb, level - 1, "}\n\n");
 
+        indent(sb, level - 1, "impl<P> Default for %s<P> {\n", name);
+        indent(sb, level, "#[inline]\n");
+        indent(sb, level, "fn default() -> Self {\n");
+        indent(sb, level + 1, "Self {\n");
+        indent(sb, level + 2, "parent: None,\n");
+        indent(sb, level + 2, "block_length: 0,\n");
+        indent(sb, level + 2, "count: 0,\n");
+        indent(sb, level + 2, "index: 0,\n");
+        indent(sb, level + 2, "offset: 0,\n");
+        indent(sb, level + 1, "}\n");
+        indent(sb, level, "}\n");
+        indent(sb, level - 1, "}\n\n");
+
         final int version = tokens.stream().findFirst().get().version();
         RustGenerator.appendImplDecoderForComposite(schemaVersionType, version, sb, level - 1, name);
 
         // define impl...
-        indent(sb, level - 1, "impl<'a, P> %s<P> where P: Decoder<'a> + ActingVersion + Default {\n", name);
+        indent(sb, level - 1, "impl<P> %s<P> where P: Decoder + ActingVersion {\n", name);
 
         final int dimensionHeaderSize = tokens.get(index).encodedLength();
 
@@ -178,9 +204,9 @@ class SubGroup implements RustGenerator.ParentDef
         indent(sb, level + 1, "mut parent: P,\n");
         indent(sb, level, ") -> Self {\n");
         indent(sb, level + 1, "let initial_offset = parent.get_limit();\n");
-        indent(sb, level + 1, "let block_length = parent.get_buf().get_%s_at(initial_offset);\n",
+        indent(sb, level + 1, "let block_length = get_%s_at(parent.get_buf(), initial_offset);\n",
             rustTypeName(blockLengthPrimitiveType));
-        indent(sb, level + 1, "let count = parent.get_buf().get_%s_at(initial_offset + %d);\n",
+        indent(sb, level + 1, "let count = get_%s_at(parent.get_buf(), initial_offset + %d);\n",
             rustTypeName(numInGroupPrimitiveType), numInGroupToken.offset());
         indent(sb, level + 1, "parent.set_limit(initial_offset + %d);\n",
             dimensionHeaderSize);

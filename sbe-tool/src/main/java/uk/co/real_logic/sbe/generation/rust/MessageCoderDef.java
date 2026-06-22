@@ -26,7 +26,6 @@ import java.util.List;
 
 import static uk.co.real_logic.sbe.generation.rust.RustGenerator.CodecType.Encoder;
 import static uk.co.real_logic.sbe.generation.rust.RustGenerator.CodecType.Decoder;
-import static uk.co.real_logic.sbe.generation.rust.RustGenerator.withBufLifetime;
 import static uk.co.real_logic.sbe.generation.rust.RustUtil.*;
 
 class MessageCoderDef implements RustGenerator.ParentDef
@@ -80,7 +79,7 @@ class MessageCoderDef implements RustGenerator.ParentDef
             RustGenerator.appendImplDecoderTrait(schemaVersionType(), sb, msgTypeName);
         }
 
-        RustGenerator.appendImplWithLifetimeHeader(sb, msgTypeName); // impl start
+        RustGenerator.appendImplHeader(sb, msgTypeName, codecType); // impl start
         appendWrapFn(sb);
 
         indent(sb, 2, "#[inline]\n");
@@ -144,7 +143,7 @@ class MessageCoderDef implements RustGenerator.ParentDef
     void appendMessageHeaderDecoderFn(final Appendable out) throws IOException
     {
         indent(out, 2, "#[inline]\n");
-        indent(out, 2, "pub fn header(self, mut header: MessageHeaderDecoder<ReadBuf<'a>>, offset: usize) -> Self {\n");
+        indent(out, 2, "pub fn header(self, mut header: MessageHeaderDecoder<B>, offset: usize) -> Self {\n");
         indent(out, 3, "debug_assert_eq!(SBE_TEMPLATE_ID, header.template_id());\n");
         indent(out, 3, "let acting_block_length = header.block_length();\n");
         indent(out, 3, "let acting_version = header.version();\n\n");
@@ -161,15 +160,15 @@ class MessageCoderDef implements RustGenerator.ParentDef
     {
         if (this.codecType == Decoder)
         {
-            indent(out, 1, "#[derive(Clone, Copy, Debug, Default)]\n");
+            indent(out, 1, "#[derive(Clone, Copy, Debug)]\n");
         }
         else
         {
-            indent(out, 1, "#[derive(Debug, Default)]\n");
+            indent(out, 1, "#[derive(Debug)]\n");
         }
 
-        indent(out, 1, "pub struct %s {\n", withBufLifetime(structName));
-        indent(out, 2, "buf: %s,\n", withBufLifetime(this.codecType.bufType()));
+        indent(out, 1, "pub struct %s<B> {\n", structName);
+        indent(out, 2, "buf: Option<B>,\n");
         indent(out, 2, "initial_offset: usize,\n");
         indent(out, 2, "offset: usize,\n");
         indent(out, 2, "limit: usize,\n");
@@ -179,6 +178,23 @@ class MessageCoderDef implements RustGenerator.ParentDef
             indent(out, 2, "pub acting_version: %s,\n", schemaVersionType());
         }
         indent(out, 1, "}\n\n");
+
+        indent(out, 1, "impl<B> Default for %s<B> {\n", structName);
+        indent(out, 2, "#[inline]\n");
+        indent(out, 2, "fn default() -> Self {\n");
+        indent(out, 3, "Self {\n");
+        indent(out, 4, "buf: None,\n");
+        indent(out, 4, "initial_offset: 0,\n");
+        indent(out, 4, "offset: 0,\n");
+        indent(out, 4, "limit: 0,\n");
+        if (this.codecType == Decoder)
+        {
+            indent(out, 4, "acting_block_length: 0,\n");
+            indent(out, 4, "acting_version: 0,\n");
+        }
+        indent(out, 3, "}\n");
+        indent(out, 2, "}\n");
+        indent(out, 1, "}\n\n");
     }
 
     void appendWrapFn(final Appendable out) throws IOException
@@ -187,7 +203,7 @@ class MessageCoderDef implements RustGenerator.ParentDef
         {
             indent(out, 2, "pub fn wrap(\n");
             indent(out, 3, "mut self,\n");
-            indent(out, 3, "buf: %s,\n", withBufLifetime(this.codecType.bufType()));
+            indent(out, 3, "buf: B,\n");
             indent(out, 3, "offset: usize,\n");
             indent(out, 3, "acting_block_length: %s,\n", blockLengthType());
             indent(out, 3, "acting_version: %s,\n", schemaVersionType());
@@ -196,12 +212,11 @@ class MessageCoderDef implements RustGenerator.ParentDef
         }
         else
         {
-            indent(out, 2, "pub fn wrap(mut self, buf: %s, offset: usize) -> Self {\n",
-                withBufLifetime(this.codecType.bufType()));
+            indent(out, 2, "pub fn wrap(mut self, buf: B, offset: usize) -> Self {\n");
             indent(out, 3, "let limit = offset + SBE_BLOCK_LENGTH as usize;\n");
         }
 
-        indent(out, 3, "self.buf = buf;\n");
+        indent(out, 3, "self.buf = Some(buf);\n");
         indent(out, 3, "self.initial_offset = offset;\n");
         indent(out, 3, "self.offset = offset;\n");
         indent(out, 3, "self.limit = limit;\n");

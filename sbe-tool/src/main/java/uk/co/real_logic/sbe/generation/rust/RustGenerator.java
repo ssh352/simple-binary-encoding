@@ -19,6 +19,7 @@ import org.agrona.Strings;
 import org.agrona.Verify;
 import org.agrona.generation.OutputManager;
 import uk.co.real_logic.sbe.PrimitiveType;
+import uk.co.real_logic.sbe.SbeTool;
 import uk.co.real_logic.sbe.generation.CodeGenerator;
 import uk.co.real_logic.sbe.generation.Generators;
 import uk.co.real_logic.sbe.generation.java.JavaUtil;
@@ -63,6 +64,11 @@ public class RustGenerator implements CodeGenerator
             {
                 return READ_BUF_TYPE;
             }
+
+            String bufferTrait()
+            {
+                return "DirectBuffer";
+            }
         },
 
         Encoder
@@ -71,9 +77,16 @@ public class RustGenerator implements CodeGenerator
             {
                 return WRITE_BUF_TYPE;
             }
+
+            String bufferTrait()
+            {
+                return "MutableDirectBuffer";
+            }
         };
 
         abstract String bufType();
+
+        abstract String bufferTrait();
     }
 
     interface ParentDef
@@ -143,6 +156,8 @@ public class RustGenerator implements CodeGenerator
             indent(writer, 0, "[lib]\n");
             indent(writer, 0, "name = \"%s\"\n", namespace);
             indent(writer, 0, "path = \"src/lib.rs\"\n");
+            indent(writer, 0, "\n[dependencies]\n");
+            indent(writer, 0, "%s\n", System.getProperty(SbeTool.RUST_AGRONA_DEPENDENCY, "agrona = \"0.1.0\""));
         }
 
         // lib.rs
@@ -221,6 +236,14 @@ public class RustGenerator implements CodeGenerator
         final String typeName) throws IOException
     {
         indent(appendable, 1, "impl<%s> %s<%s> {\n", BUF_LIFETIME, typeName, BUF_LIFETIME);
+    }
+
+    static void appendImplHeader(
+        final Appendable appendable,
+        final String typeName,
+        final CodecType codecType) throws IOException
+    {
+        indent(appendable, 1, "impl<B: %s> %s<B> {\n", codecType.bufferTrait(), typeName);
     }
 
     static String getBufOffset(final Token token)
@@ -486,10 +509,10 @@ public class RustGenerator implements CodeGenerator
             indent(sb, level + 1, "self.set_limit(limit + %d + data_length);\n", lengthType.size());
 
             indent(sb, level + 1,
-                "self.get_buf_mut().put_%s_at(limit, data_length as %1$s);\n",
+                "put_%s_at(self.get_buf_mut(), limit, data_length as %1$s);\n",
                 rustTypeName(lengthType));
 
-            indent(sb, level + 1, "self.get_buf_mut().put_slice_at(limit + %d, &value[0..data_length]%s);\n",
+            indent(sb, level + 1, "put_slice_at(self.get_buf_mut(), limit + %d, &value[0..data_length]%s);\n",
                 lengthType.size(),
                 toBytesFn);
 
@@ -570,11 +593,11 @@ public class RustGenerator implements CodeGenerator
 
         if (primitiveType.size() == 1)
         {
-            indent(sb, level + 2, "buf.put_%s_at(offset + i, v);\n", rustPrimitiveType);
+            indent(sb, level + 2, "put_%s_at(buf, offset + i, v);\n", rustPrimitiveType);
         }
         else
         {
-            indent(sb, level + 2, "buf.put_%s_at(offset + i * %d, v);\n",
+            indent(sb, level + 2, "put_%s_at(buf, offset + i * %d, v);\n",
                 rustPrimitiveType, primitiveType.size());
         }
         indent(sb, level + 1, "}\n");
@@ -628,11 +651,11 @@ public class RustGenerator implements CodeGenerator
 
         if (primitiveType.size() == 1)
         {
-            indent(sb, level + 1, "buf.put_%s_at(offset + index, value);\n", rustPrimitiveType);
+            indent(sb, level + 1, "put_%s_at(buf, offset + index, value);\n", rustPrimitiveType);
         }
         else
         {
-            indent(sb, level + 1, "buf.put_%s_at(offset + index * %d, value);\n",
+            indent(sb, level + 1, "put_%s_at(buf, offset + index * %d, value);\n",
                 rustPrimitiveType, primitiveType.size());
         }
         indent(sb, level + 1, "self\n");
@@ -651,7 +674,7 @@ public class RustGenerator implements CodeGenerator
 
         if (rustPrimitiveType.equals("u8"))
         {
-            indent(sb, level + 1, "buf.put_slice_at(offset, value);\n");
+            indent(sb, level + 1, "put_slice_at(buf, offset, value);\n");
             indent(sb, level + 1, "self\n");
             indent(sb, level, "}\n\n");
         }
@@ -661,11 +684,11 @@ public class RustGenerator implements CodeGenerator
             {
                 if (i == 0)
                 {
-                    indent(sb, level + 1, "buf.put_%s_at(offset, value[%d]);\n", rustPrimitiveType, i);
+                    indent(sb, level + 1, "put_%s_at(buf, offset, value[%d]);\n", rustPrimitiveType, i);
                 }
                 else
                 {
-                    indent(sb, level + 1, "buf.put_%s_at(offset + %d, value[%d]);\n",
+                    indent(sb, level + 1, "put_%s_at(buf, offset + %d, value[%d]);\n",
                         rustPrimitiveType,
                         i * primitiveType.size(),
                         i);
@@ -723,7 +746,7 @@ public class RustGenerator implements CodeGenerator
 
         // NB: must create variable 'offset' before calling mutable self.get_buf_mut()
         indent(sb, level + 1, "let offset = self.%s;\n", getBufOffset(typeToken));
-        indent(sb, level + 1, "self.get_buf_mut().put_%s_at(offset, value);\n", rustPrimitiveType);
+        indent(sb, level + 1, "put_%s_at(self.get_buf_mut(), offset, value);\n", rustPrimitiveType);
         indent(sb, level + 1, "self\n");
         indent(sb, level, "}\n\n");
     }
@@ -780,7 +803,7 @@ public class RustGenerator implements CodeGenerator
 
             // NB: must create variable 'offset' before calling mutable self.get_buf_mut()
             indent(sb, level + 1, "let offset = self.%s;\n", getBufOffset(typeToken));
-            indent(sb, level + 1, "self.get_buf_mut().put_%s_at(offset, value as %1$s);\n", rustPrimitiveType);
+            indent(sb, level + 1, "put_%s_at(self.get_buf_mut(), offset, value as %1$s);\n", rustPrimitiveType);
             indent(sb, level + 1, "self\n");
             indent(sb, level, "}\n\n");
         }
@@ -828,7 +851,7 @@ public class RustGenerator implements CodeGenerator
 
         // NB: must create variable 'offset' before calling mutable self.get_buf_mut()
         indent(sb, level + 1, "let offset = self.%s;\n", getBufOffset(bitsetToken));
-        indent(sb, level + 1, "self.get_buf_mut().put_%s_at(offset, value.0)\n", rustPrimitiveType);
+        indent(sb, level + 1, "put_%s_at(self.get_buf_mut(), offset, value.0)\n", rustPrimitiveType);
         indent(sb, level, "}\n\n");
     }
 
@@ -961,7 +984,7 @@ public class RustGenerator implements CodeGenerator
             indent(sb, level + 1, "}\n\n");
         }
 
-        indent(sb, level + 1, "%s::new(self.get_buf().get_%s_at(self.%s))\n",
+        indent(sb, level + 1, "%s::new(get_%s_at(self.get_buf(), self.%s))\n",
             structTypeName,
             rustPrimitiveType,
             getBufOffset(bitsetToken));
@@ -1025,7 +1048,7 @@ public class RustGenerator implements CodeGenerator
         indent(sb, level + 1, "let buf = self.get_buf();\n");
         if (rustPrimitiveType.equals("u8"))
         {
-            indent(sb, level + 1, "ReadBuf::get_bytes_at(buf.data, self.%s)\n",
+            indent(sb, level + 1, "get_bytes_at(buf, self.%s)\n",
                 getBufOffset(typeToken));
             indent(sb, level, "}\n\n");
             return;
@@ -1036,13 +1059,13 @@ public class RustGenerator implements CodeGenerator
         {
             if (i == 0)
             {
-                indent(sb, level + 2, "buf.get_%s_at(self.%s),\n",
+                indent(sb, level + 2, "get_%s_at(buf, self.%s),\n",
                     rustPrimitiveType,
                     getBufOffset(typeToken));
             }
             else
             {
-                indent(sb, level + 2, "buf.get_%s_at(self.%s + %d),\n",
+                indent(sb, level + 2, "get_%s_at(buf, self.%s + %d),\n",
                     rustPrimitiveType,
                     getBufOffset(typeToken),
                     i * primitiveType.size());
@@ -1135,7 +1158,7 @@ public class RustGenerator implements CodeGenerator
             indent(sb, level + 1, "}\n\n");
         }
 
-        indent(sb, level + 1, "let value = self.get_buf().get_%s_at(self.%s);\n",
+        indent(sb, level + 1, "let value = get_%s_at(self.get_buf(), self.%s);\n",
             rustPrimitiveType,
             getBufOffset(fieldToken));
 
@@ -1189,7 +1212,7 @@ public class RustGenerator implements CodeGenerator
             indent(sb, level + 1, "}\n\n");
         }
 
-        indent(sb, level + 1, "self.get_buf().get_%s_at(self.%s)\n",
+        indent(sb, level + 1, "get_%s_at(self.get_buf(), self.%s)\n",
             rustPrimitiveType,
             getBufOffset(fieldToken));
         indent(sb, level, "}\n\n");
@@ -1238,7 +1261,7 @@ public class RustGenerator implements CodeGenerator
                 indent(sb, level + 1, "}\n\n");
             }
 
-            indent(sb, level + 1, "self.get_buf().get_%s_at(self.%s).into()\n",
+            indent(sb, level + 1, "get_%s_at(self.get_buf(), self.%s).into()\n",
                 rustPrimitiveType,
                 getBufOffset(typeToken));
             indent(sb, level, "}\n\n");
@@ -1350,7 +1373,7 @@ public class RustGenerator implements CodeGenerator
                 }
 
                 indent(sb, level + 1, "let offset = self.parent.as_ref().expect(\"parent missing\").get_limit();\n");
-                indent(sb, level + 1, "let data_length = self.get_buf().get_%s_at(offset) as usize;\n",
+                indent(sb, level + 1, "let data_length = get_%s_at(self.get_buf(), offset) as usize;\n",
                     rustTypeName(lengthType));
                 indent(sb, level + 1, "self.parent.as_mut().unwrap().set_limit(offset + %d + data_length);\n",
                     lengthType.size());
@@ -1366,7 +1389,7 @@ public class RustGenerator implements CodeGenerator
                 }
 
                 indent(sb, level + 1, "let offset = self.get_limit();\n");
-                indent(sb, level + 1, "let data_length = self.get_buf().get_%s_at(offset) as usize;\n",
+                indent(sb, level + 1, "let data_length = get_%s_at(self.get_buf(), offset) as usize;\n",
                     rustTypeName(lengthType));
                 indent(sb, level + 1, "self.set_limit(offset + %d + data_length);\n", lengthType.size());
             }
@@ -1375,7 +1398,8 @@ public class RustGenerator implements CodeGenerator
 
             // function to return slice form given coord
             indent(sb, level, "#[inline]\n");
-            indent(sb, level, "pub fn %s_slice(&'a self, coordinates: (usize, usize)) -> &'a [u8] {\n", propertyName);
+            indent(sb, level, "pub fn %s_slice<'b>(&'b self, coordinates: (usize, usize)) -> &'b [u8] {\n",
+                propertyName);
 
             if (varDataToken.version() > 0)
             {
@@ -1386,7 +1410,7 @@ public class RustGenerator implements CodeGenerator
             }
 
             indent(sb, level + 1, "debug_assert!(self.get_limit() >= coordinates.0 + coordinates.1);\n");
-            indent(sb, level + 1, "self.get_buf().get_slice_at(coordinates.0, coordinates.1)\n");
+            indent(sb, level + 1, "get_slice_at(self.get_buf(), coordinates.0, coordinates.1)\n");
             indent(sb, level, "}\n\n");
 
             i += varDataToken.componentTokenCount();
@@ -1503,14 +1527,15 @@ public class RustGenerator implements CodeGenerator
         final String typeName,
         final NullifyTargets targets) throws IOException
     {
-        indent(out, 1, "impl<%s> %s for %s {\n", BUF_LIFETIME, withBufLifetime("Writer"), withBufLifetime(typeName));
+        indent(out, 1, "impl<B: MutableDirectBuffer> Writer for %s<B> {\n", typeName);
+        indent(out, 2, "type Buffer = B;\n\n");
         indent(out, 2, "#[inline]\n");
-        indent(out, 2, "fn get_buf_mut(&mut self) -> &mut WriteBuf<'a> {\n");
-        indent(out, 3, "&mut self.buf\n");
+        indent(out, 2, "fn get_buf_mut(&self) -> &Self::Buffer {\n");
+        indent(out, 3, "self.buf.as_ref().expect(\"encoder not wrapped\")\n");
         indent(out, 2, "}\n");
         indent(out, 1, "}\n\n");
 
-        indent(out, 1, "impl<%s> %s for %s {\n", BUF_LIFETIME, withBufLifetime("Encoder"), withBufLifetime(typeName));
+        indent(out, 1, "impl<B: MutableDirectBuffer> Encoder for %s<B> {\n", typeName);
         indent(out, 2, "#[inline]\n");
         indent(out, 2, "fn get_limit(&self) -> usize {\n");
         indent(out, 3, "self.limit\n");
@@ -1531,21 +1556,22 @@ public class RustGenerator implements CodeGenerator
         final Appendable out,
         final String typeName) throws IOException
     {
-        indent(out, 1, "impl %s for %s {\n", "ActingVersion", withAnonymousLifetime(typeName));
+        indent(out, 1, "impl<B> %s for %s<B> {\n", "ActingVersion", typeName);
         indent(out, 2, "#[inline]\n");
         indent(out, 2, "fn acting_version(&self) -> %s {\n", schemaVersionType);
         indent(out, 3, "self.acting_version\n");
         indent(out, 2, "}\n");
         indent(out, 1, "}\n\n");
 
-        indent(out, 1, "impl<%s> %s for %s {\n", BUF_LIFETIME, withBufLifetime("Reader"), withBufLifetime(typeName));
+        indent(out, 1, "impl<B: DirectBuffer> Reader for %s<B> {\n", typeName);
+        indent(out, 2, "type Buffer = B;\n\n");
         indent(out, 2, "#[inline]\n");
-        indent(out, 2, "fn get_buf(&self) -> &ReadBuf<'a> {\n");
-        indent(out, 3, "&self.buf\n");
+        indent(out, 2, "fn get_buf(&self) -> &Self::Buffer {\n");
+        indent(out, 3, "self.buf.as_ref().expect(\"decoder not wrapped\")\n");
         indent(out, 2, "}\n");
         indent(out, 1, "}\n\n");
 
-        indent(out, 1, "impl<%s> %s for %s {\n", BUF_LIFETIME, withBufLifetime("Decoder"), withBufLifetime(typeName));
+        indent(out, 1, "impl<B: DirectBuffer> Decoder for %s<B> {\n", typeName);
         indent(out, 2, "#[inline]\n");
         indent(out, 2, "fn get_limit(&self) -> usize {\n");
         indent(out, 3, "self.limit\n");
@@ -1785,10 +1811,11 @@ public class RustGenerator implements CodeGenerator
         final String name) throws IOException
     {
         // impl Decoder...
-        indent(out, level, "impl<'a, P> Writer<'a> for %s<P> where P: Writer<'a> + Default {\n", name);
+        indent(out, level, "impl<P> Writer for %s<P> where P: Writer {\n", name);
+        indent(out, level + 1, "type Buffer = P::Buffer;\n\n");
         indent(out, level + 1, "#[inline]\n");
-        indent(out, level + 1, "fn get_buf_mut(&mut self) -> &mut WriteBuf<'a> {\n");
-        indent(out, level + 2, "if let Some(parent) = self.parent.as_mut() {\n");
+        indent(out, level + 1, "fn get_buf_mut(&self) -> &Self::Buffer {\n");
+        indent(out, level + 2, "if let Some(parent) = self.parent.as_ref() {\n");
         indent(out, level + 3, "parent.get_buf_mut()\n");
         indent(out, level + 2, "} else {\n");
         indent(out, level + 3, "panic!(\"parent was None\")\n");
@@ -1806,7 +1833,7 @@ public class RustGenerator implements CodeGenerator
         appendImplWriterForComposite(out, level, name);
 
         // impl Encoder...
-        indent(out, level, "impl<'a, P> Encoder<'a> for %s<P> where P: Encoder<'a> + Default {\n", name);
+        indent(out, level, "impl<P> Encoder for %s<P> where P: Encoder {\n", name);
         indent(out, level + 1, "#[inline]\n");
         indent(out, level + 1, "fn get_limit(&self) -> usize {\n");
         indent(out, level + 2, "self.parent.as_ref().expect(\"parent missing\").get_limit()\n");
@@ -1829,7 +1856,7 @@ public class RustGenerator implements CodeGenerator
         final int level,
         final String name) throws IOException
     {
-        indent(out, level, "impl<'a, P> ActingVersion for %s<P> where P: Reader<'a> + ActingVersion + Default {\n",
+        indent(out, level, "impl<P> ActingVersion for %s<P> where P: Reader + ActingVersion {\n",
             name);
         indent(out, level + 1, "#[inline]\n");
         indent(out, level + 1, "fn acting_version(&self) -> %s {\n", schemaVersionType);
@@ -1838,10 +1865,11 @@ public class RustGenerator implements CodeGenerator
         indent(out, level, "}\n\n");
 
         // impl Reader...
-        indent(out, level, "impl<'a, P> Reader<'a> for %s<P> where P: Reader<'a> %s+ Default {\n",
+        indent(out, level, "impl<P> Reader for %s<P> where P: Reader %s{\n",
             name, version > 0 ? "+ ActingVersion " : "");
+        indent(out, level + 1, "type Buffer = P::Buffer;\n\n");
         indent(out, level + 1, "#[inline]\n");
-        indent(out, level + 1, "fn get_buf(&self) -> &ReadBuf<'a> {\n");
+        indent(out, level + 1, "fn get_buf(&self) -> &Self::Buffer {\n");
         indent(out, level + 2, "self.parent.as_ref().expect(\"parent missing\").get_buf()\n");
         indent(out, level + 1, "}\n");
         indent(out, level, "}\n\n");
@@ -1857,7 +1885,7 @@ public class RustGenerator implements CodeGenerator
         appendImplReaderForComposite(schemaVersionType, version, out, level, name);
 
         // impl Decoder...
-        indent(out, level, "impl<'a, P> Decoder<'a> for %s<P> where P: Decoder<'a> + ActingVersion + Default {\n",
+        indent(out, level, "impl<P> Decoder for %s<P> where P: Decoder + ActingVersion {\n",
             name);
         indent(out, level + 1, "#[inline]\n");
         indent(out, level + 1, "fn get_limit(&self) -> usize {\n");
@@ -1880,16 +1908,23 @@ public class RustGenerator implements CodeGenerator
         indent(out, 1, "use super::*;\n\n");
 
         // define struct...
-        indent(out, 1, "#[derive(Debug, Default)]\n");
+        indent(out, 1, "#[derive(Debug)]\n");
         indent(out, 1, "pub struct %s<P> {\n", encoderName);
         indent(out, 2, "parent: Option<P>,\n");
         indent(out, 2, "offset: usize,\n");
         indent(out, 1, "}\n\n");
 
+        indent(out, 1, "impl<P> Default for %s<P> {\n", encoderName);
+        indent(out, 2, "#[inline]\n");
+        indent(out, 2, "fn default() -> Self {\n");
+        indent(out, 3, "Self { parent: None, offset: 0 }\n");
+        indent(out, 2, "}\n");
+        indent(out, 1, "}\n\n");
+
         appendImplWriterForComposite(out, 1, encoderName);
 
         // impl<'a> start
-        indent(out, 1, "impl<'a, P> %s<P> where P: Writer<'a> + Default {\n", encoderName);
+        indent(out, 1, "impl<P> %s<P> where P: Writer {\n", encoderName);
         indent(out, 2, "pub fn wrap(mut self, parent: P, offset: usize) -> Self {\n");
         indent(out, 3, "self.parent = Some(parent);\n");
         indent(out, 3, "self.offset = offset;\n");
@@ -1961,10 +1996,17 @@ public class RustGenerator implements CodeGenerator
         indent(out, 0, "pub mod decoder {\n");
         indent(out, 1, "use super::*;\n\n");
 
-        indent(out, 1, "#[derive(Debug, Default)]\n");
+        indent(out, 1, "#[derive(Debug)]\n");
         indent(out, 1, "pub struct %s<P> {\n", decoderName);
         indent(out, 2, "parent: Option<P>,\n");
         indent(out, 2, "offset: usize,\n");
+        indent(out, 1, "}\n\n");
+
+        indent(out, 1, "impl<P> Default for %s<P> {\n", decoderName);
+        indent(out, 2, "#[inline]\n");
+        indent(out, 2, "fn default() -> Self {\n");
+        indent(out, 3, "Self { parent: None, offset: 0 }\n");
+        indent(out, 2, "}\n");
         indent(out, 1, "}\n\n");
 
         // The version of the composite type is the greatest version of its fields.
@@ -1973,7 +2015,7 @@ public class RustGenerator implements CodeGenerator
         appendImplReaderForComposite(schemaVersionType, version, out, 1, decoderName);
 
         // impl<'a, P> start
-        indent(out, 1, "impl<'a, P> %s<P> where P: Reader<'a> %s+ Default {\n",
+        indent(out, 1, "impl<P> %s<P> where P: Reader %s{\n",
             decoderName, version > 0 ? "+ ActingVersion " : "");
         indent(out, 2, "pub fn wrap(mut self, parent: P, offset: usize) -> Self {\n");
         indent(out, 3, "self.parent = Some(parent);\n");

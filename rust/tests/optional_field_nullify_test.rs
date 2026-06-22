@@ -54,55 +54,57 @@ macro_rules! create_encoder_with_header_parent {
     }};
 }
 
-fn create_issue_895_encoder(buffer: &mut Vec<u8>) -> Issue895Encoder<'_> {
+fn create_issue_895_encoder(buffer: &mut Vec<u8>) -> Issue895Encoder<I895WriteBuf<'_>> {
     create_encoder_with_header_parent!(
         buffer,
-        Issue895Encoder<'_>,
+        Issue895Encoder<I895WriteBuf<'_>>,
         I895WriteBuf<'_>,
         i895_header::ENCODED_LENGTH
     )
 }
 
-fn create_issue_972_encoder(buffer: &mut Vec<u8>) -> Issue972Encoder<'_> {
+fn create_issue_972_encoder(buffer: &mut Vec<u8>) -> Issue972Encoder<I972WriteBuf<'_>> {
     create_encoder_with_header_parent!(
         buffer,
-        Issue972Encoder<'_>,
+        Issue972Encoder<I972WriteBuf<'_>>,
         I972WriteBuf<'_>,
         i972_header::ENCODED_LENGTH
     )
 }
 
-fn create_optional_enum_nullify_encoder(buffer: &mut Vec<u8>) -> OptionalEnumNullifyEncoder<'_> {
+fn create_optional_enum_nullify_encoder(
+    buffer: &mut Vec<u8>,
+) -> OptionalEnumNullifyEncoder<OenWriteBuf<'_>> {
     create_encoder_with_header_parent!(
         buffer,
-        OptionalEnumNullifyEncoder<'_>,
+        OptionalEnumNullifyEncoder<OenWriteBuf<'_>>,
         OenWriteBuf<'_>,
         oen_header::ENCODED_LENGTH
     )
 }
 
-fn create_mass_quote_encoder(buffer: &mut Vec<u8>) -> MassQuoteEncoder<'_> {
+fn create_mass_quote_encoder(buffer: &mut Vec<u8>) -> MassQuoteEncoder<MassQuoteWriteBuf<'_>> {
     create_encoder_with_header_parent!(
         buffer,
-        MassQuoteEncoder<'_>,
+        MassQuoteEncoder<MassQuoteWriteBuf<'_>>,
         MassQuoteWriteBuf<'_>,
         mqfix_header::ENCODED_LENGTH
     )
 }
 
-fn decode_issue_895(buffer: &[u8]) -> Issue895Decoder<'_> {
+fn decode_issue_895(buffer: &[u8]) -> Issue895Decoder<I895ReadBuf<'_>> {
     let buf = I895ReadBuf::new(buffer);
     let header = I895HeaderDecoder::default().wrap(buf, 0);
     Issue895Decoder::default().header(header, 0)
 }
 
-fn decode_issue_972(buffer: &[u8]) -> Issue972Decoder<'_> {
+fn decode_issue_972(buffer: &[u8]) -> Issue972Decoder<I972ReadBuf<'_>> {
     let buf = I972ReadBuf::new(buffer);
     let header = I972HeaderDecoder::default().wrap(buf, 0);
     Issue972Decoder::default().header(header, 0)
 }
 
-fn decode_optional_enum_nullify(buffer: &[u8]) -> OptionalEnumNullifyDecoder<'_> {
+fn decode_optional_enum_nullify(buffer: &[u8]) -> OptionalEnumNullifyDecoder<OenReadBuf<'_>> {
     let buf = OenReadBuf::new(buffer);
     let header = OptionalEnumNullifyHeaderDecoder::default().wrap(buf, 0);
     OptionalEnumNullifyDecoder::default().header(header, 0)

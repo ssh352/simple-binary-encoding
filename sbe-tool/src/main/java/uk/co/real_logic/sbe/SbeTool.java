@@ -161,6 +161,11 @@ public class SbeTool
     public static final String RUST_DEFAULT_CRATE_VERSION = "0.1.0";
 
     /**
+     * TOML dependency entry for the Rust Agrona crate used by generated Rust codecs.
+     */
+    public static final String RUST_AGRONA_DEPENDENCY = "sbe.rust.agrona.dependency";
+
+    /**
      * Boolean system property to turn on or off generation of the interface hierarchy. Defaults to false.
      */
     public static final String JAVA_GENERATE_INTERFACES = "sbe.java.generate.interfaces";
